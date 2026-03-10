@@ -78,12 +78,14 @@ def basic(args):
             )
         return loader
     ################### training ###################
-    train_adata_path = f"datasets/TestPBMC_labeled.h5ad"
-    test_adata_path = f"datasets/TestPBMC_labeled.h5ad"
+    train_adata_path = f"datasets/GSE103001_raw_counts_GRCh38.p13_NCBI_CellFM_TRAINING.h5ad"
+    test_adata_path = f"datasets/GSE183947_raw_counts_GRCh38.p13_NCBI_CellFM_TEST.h5ad"
     
     train_loader = load_data(train_adata_path, mode="train")
     test_loader = load_data(test_adata_path, mode="test")
     
+    train_losses = [] * cfg.epoch
+    test_losses = [] * cfg.epoch
 
     net = Finetune_Cell_FM(cfg) # 27855
 
@@ -157,7 +159,10 @@ def basic(args):
         
         scheduler.step()
         print(f"Epoch {epoch+1} 完成,平均loss: {avg_loss:.6f}")
-        torch.save(net.state_dict(), f"{MODEL_PATH}/checkpoint_epoch_{epoch+1}.pth")
+        
+        # Save up to 50 uniformly spaced model checkpoints
+        if (epoch + 1) % max(1, cfg.epoch // 50) == 0 or epoch == cfg.epoch - 1:
+            torch.save(net.state_dict(), f"{MODEL_PATH}/checkpoint_epoch_{epoch+1}.pth")
 
         net.eval()
         print("testing...")
