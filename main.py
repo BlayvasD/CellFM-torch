@@ -13,6 +13,7 @@ from tqdm import tqdm
 import json
 
 import pickle
+import time
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -21,6 +22,9 @@ from model import Finetune_Cell_FM
 
 
 def basic(args):
+    start_time = time.time()
+    print(f"Script started at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
+    
     ### CellFM param ###
     cfg = Config_80M()
     cfg.ecs_threshold = 0.8
@@ -77,6 +81,14 @@ def basic(args):
                 shuffle=False
             )
         return loader
+
+    def aggregate_mask_loss(mask_loss):
+        if isinstance(mask_loss, torch.Tensor):
+            return mask_loss
+        if isinstance(mask_loss, (tuple, list)):
+            return sum(mask_loss)
+        raise TypeError(f"Unsupported mask_loss type: {type(mask_loss)}")
+    
     ################### training ###################
     train_adata_path = f"datasets/GSE103001_raw_counts_GRCh38.p13_NCBI_CellFM_TRAINING.h5ad"
     test_adata_path = f"datasets/GSE183947_raw_counts_GRCh38.p13_NCBI_CellFM_TEST.h5ad"
@@ -84,8 +96,8 @@ def basic(args):
     train_loader = load_data(train_adata_path, mode="train")
     test_loader = load_data(test_adata_path, mode="test")
     
-    train_losses = [] * cfg.epoch
-    test_losses = [] * cfg.epoch
+    train_losses = []
+    val_losses = []
 
     net = Finetune_Cell_FM(cfg) # 27855
 
@@ -111,8 +123,9 @@ def basic(args):
     for epoch in range(cfg.epoch):
         net.train()
         print("training...")
-        running_loss = 0.0
+        train_running_loss = 0.0
         running_acc = 0.0
+        train_steps = 0
         progress = tqdm(train_loader, desc=f"Epoch {epoch+1}/{cfg.epoch}")
         
         for step, batch in enumerate(progress):    
@@ -139,7 +152,7 @@ def basic(args):
                 ) 
                 
                 cls_loss = criterion_cls(cls, feat)
-                loss = mask_loss + cls_loss
+                loss = aggregate_mask_loss(mask_loss) + cls_loss
             
             scaler.scale(loss).backward()
             nn.utils.clip_grad_norm_(net.parameters(), max_norm=1.0)
@@ -149,27 +162,32 @@ def basic(args):
             accuracy = (cls.argmax(1) == feat).sum().item()
             accuracy = accuracy / len(batch_id)
             
-            running_loss += loss.item()
+            train_running_loss += loss.item()
             running_acc += accuracy
+            train_steps += 1
             
-            avg_loss = running_loss / (step + 1)
+            avg_loss = train_running_loss / train_steps
             avg_acc = running_acc / (step + 1)
             
             progress.set_postfix(loss=avg_loss, acc=avg_acc)
+
+        epoch_train_loss = train_running_loss / max(1, train_steps)
+        train_losses.append(epoch_train_loss)
         
         scheduler.step()
-        print(f"Epoch {epoch+1} 完成,平均loss: {avg_loss:.6f}")
+        print(f"Epoch {epoch+1} complete, avg train loss: {epoch_train_loss:.6f}")
         
-        # Save up to 50 uniformly spaced model checkpoints
-        if (epoch + 1) % max(1, cfg.epoch // 50) == 0 or epoch == cfg.epoch - 1:
+        # Save up to 10 uniformly spaced model checkpoints
+        if (epoch + 1) % max(1, cfg.epoch // 10) == 0 or epoch == cfg.epoch - 1:
             torch.save(net.state_dict(), f"{MODEL_PATH}/checkpoint_epoch_{epoch+1}.pth")
 
         net.eval()
-        print("testing...")
-        running_loss = 0.0
+        print("validating...")
+        val_running_loss = 0.0
         running_acc = 0.0
+        val_steps = 0
     
-        progress = tqdm(test_loader, desc="Testing")
+        progress = tqdm(test_loader, desc="Validation")
         with torch.no_grad(): 
             for step, batch in enumerate(progress):    
                 
@@ -194,21 +212,37 @@ def basic(args):
                     ) 
                     
                     cls_loss = criterion_cls(cls, feat)
-                    loss = mask_loss[0] + cls_loss
+                    loss = aggregate_mask_loss(mask_loss) + cls_loss
 
                 pred = cls.argmax(1)
                 accuracy = (pred == feat).sum().item()
                 accuracy = accuracy / len(batch_id)
                 
-                running_loss += loss.item()
+                val_running_loss += loss.item()
                 running_acc += accuracy
+                val_steps += 1
                 
-                avg_loss = running_loss / (step + 1)
+                avg_loss = val_running_loss / val_steps
                 avg_acc = running_acc / (step + 1)
                 
                 progress.set_postfix(loss=avg_loss, acc=avg_acc)
+        epoch_val_loss = val_running_loss / max(1, val_steps)
+        val_losses.append(epoch_val_loss)
         
-        print(f"Testing {epoch+1} complete,avg loss: {avg_loss:.6f}, avg acc: {avg_acc:.6f}")
+        print(f"Validation {epoch+1} complete, avg val loss: {epoch_val_loss:.6f}, avg acc: {avg_acc:.6f}")
+
+    loss_history_path = os.path.join(MODEL_PATH, "loss_history.json")
+    with open(loss_history_path, "w", encoding="utf-8") as f:
+        json.dump({"train_losses": train_losses, "val_losses": val_losses}, f, indent=2)
+    print(f"Saved loss history to {loss_history_path}")
+    
+    end_time = time.time()
+    elapsed = end_time - start_time
+    print(f"Script ended at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_time))}")
+    days, remainder = divmod(elapsed, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    print(f"Total execution time: {int(days)} days, {int(hours)} hours, {int(minutes)} minutes, {seconds:.2f} seconds")
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
