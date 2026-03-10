@@ -78,8 +78,8 @@ def basic(args):
             )
         return loader
     ################### training ###################
-    train_adata_path = f"/data/user/liwb/project/CellFM/datasets/cell_annotion/Inter/{cfg.dataset}/train.h5ad"
-    test_adata_path = f"/data/user/liwb/project/CellFM/datasets/cell_annotion/Inter/{cfg.dataset}/test.h5ad"
+    train_adata_path = f"datasets/TestPBMC_labeled.h5ad"
+    test_adata_path = f"datasets/TestPBMC_labeled.h5ad"
     
     train_loader = load_data(train_adata_path, mode="train")
     test_loader = load_data(test_adata_path, mode="test")
