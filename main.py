@@ -3,6 +3,10 @@ import os
 import torch
 import torch.nn.functional as F
 from torch.optim import AdamW
+
+# Quantized model for small VRAM
+from bitsandbytes.optim import AdamW8bit
+
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.cuda.amp import autocast, GradScaler
 from layers.utils import *
@@ -99,10 +103,15 @@ def basic(args):
     train_losses = []
     val_losses = []
 
-    net = Finetune_Cell_FM(cfg) # 27855
+    net = Finetune_Cell_FM(cfg) # 24079
 
     for name, param in net.named_parameters():
-        param.requires_grad = "cls." in name or "encoder" in name
+        if "encoder.0" in name:
+            param.requires_grad = False
+        elif "cls." in name or "encoder" in name:
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
     
     print("Trainable parameters:")
     for name, param in net.named_parameters():
@@ -111,7 +120,7 @@ def basic(args):
     net = net.to(cfg.device)
     net.extractor.load_model(weight=True, moment=False)
     
-    optimizer = AdamW([p for p in net.parameters() if p.requires_grad], 
+    optimizer = AdamW8bit([p for p in net.parameters() if p.requires_grad], 
                       lr=1e-4,
                       weight_decay=1e-5)
     
@@ -249,7 +258,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default="Pancrm0")
     parser.add_argument("--feature_col", type=str, default="cell_type")
     parser.add_argument("--ckpt_path", type=str, default="/bigdat2/user/shanggny/checkpoint/para80m/6300w_18000_19479-1_38071.ckpt")
-    parser.add_argument("--device", type=str, default='cuda:2')
+    parser.add_argument("--device", type=str, default='cuda:0')
     parser.add_argument("--epoch", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=16)
     args = parser.parse_args()

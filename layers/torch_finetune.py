@@ -96,7 +96,7 @@ class FinetuneModel(nn.Module):
     @torch.no_grad()
     def embedding_infer(self, expr, gene, ST_feat, zero_idx):
         b, l = gene.shape
-        gene_emb = self.gene_emb[gene] 
+        gene_emb = self.gene_emb[torch.clamp(gene - 1, 0, self.n_genes)] 
         expr_emb, unmask = self.value_enc(expr)
         len_scale = torch.rsqrt(zero_idx.sum(dim=-1, keepdim=True).float() - 3 + 1e-6)
         len_scale = len_scale.view(b, 1, 1, 1).detach()
@@ -152,7 +152,7 @@ class FinetuneModel(nn.Module):
 
     def encode(self, expr, gene, ST_feat, zero_idx):
         b, l = gene.shape
-        gene_emb = self.gene_emb[gene] 
+        gene_emb = self.gene_emb[torch.clamp(gene - 1, 0, self.n_genes)] 
         expr_emb, unmask = self.value_enc(expr)
         # len_scale = torch.rsqrt(zero_idx.sum(-1).float() - 3 + 1e-6).view(b, 1, 1, 1).detach()
         len_scale = torch.rsqrt(zero_idx.sum(dim=-1, keepdim=True).float() - 3 + 1e-6)

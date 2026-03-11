@@ -122,16 +122,28 @@ class Cell_FM(nn.Module):
         cls_token, st_emb, expr_emb = emb[:, 0], emb[:, 1:3], emb[:, 3:]
 
         return loss, cls_token
-    
+
+class AdaptiveNorm(nn.Module):
+    def __init__(self, num_features):
+        super().__init__()
+        self.bn = nn.BatchNorm1d(num_features)
+        self.identity = nn.Identity()
+
+    def forward(self, x):
+        if x.size(0) > 1:
+            return self.bn(x)
+        else:
+            return self.identity(x)
+
 class Finetune_Cell_FM(nn.Module):
     def __init__(self, cfg):
         super(Finetune_Cell_FM, self).__init__()
         self.cfg = cfg
         self.num_cls = cfg.num_cls
-        self.extractor = Cell_FM(27855, self.cfg, ckpt_path=self.cfg.ckpt_path, device=self.cfg.device) # n_gene, cfg=config_80M()
+        self.extractor = Cell_FM(24079, self.cfg, ckpt_path=self.cfg.ckpt_path, device=self.cfg.device) # n_gene, cfg=config_80M()
         self.cls = nn.Sequential(
             nn.Linear(self.cfg.enc_dims, 128),
-            nn.BatchNorm1d(128),
+            AdaptiveNorm(128),
             nn.LeakyReLU(),
             nn.Linear(128, self.num_cls)
         )
