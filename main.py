@@ -120,6 +120,10 @@ def basic(args):
     net = net.to(cfg.device)
     net.extractor.load_model(weight=True, moment=False)
     
+    # Save initial checkpoint before training
+    torch.save(net.state_dict(), f"{MODEL_PATH}/checkpoint_epoch_0.pth")
+    print(f"Saved initial checkpoint: {MODEL_PATH}/checkpoint_epoch_0.pth")
+    
     optimizer = AdamW8bit([p for p in net.parameters() if p.requires_grad], 
                       lr=1e-4,
                       weight_decay=1e-5)
